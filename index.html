@@ -1,54 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jarvis Interface</title>
-    <style>
-        body {
-            background-color: #0d1117;
-            color: #58a6ff;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-        }
-        #mic-btn {
-            background: radial-gradient(circle, #1f2937 0%, #111827 100%);
-            border: 2px solid #58a6ff;
-            border-radius: 50%;
-            width: 150px;
-            height: 150px;
-            cursor: pointer;
-            box-shadow: 0 0 15px rgba(88, 166, 255, 0.2);
-            transition: all 0.3s ease;
-            font-size: 16px;
-            color: #58a6ff;
-            font-weight: bold;
-        }
-        #mic-btn.listening {
-            border-color: #ff7b72;
-            color: #ff7b72;
-            box-shadow: 0 0 30px rgba(255, 123, 114, 0.6);
-            animation: pulse 1.5s infinite;
-        }
-        #status { margin-top: 20px; font-size: 18px; text-align: center; max-width: 80%; }
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            50% { transform: scale(1.05); }
-            100% { transform: scale(1); }
-        }
-    </style>
-</head>
-<body>
-
-    <button id="mic-btn" onclick="toggleListening()">TAP TO SPEAK</button>
-    <div id="status">Ready, sir.</div>
-
-    <script>
+<script>
         // PASTE YOUR MAKE.COM WEBHOOK URL HERE
         const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/y4h1w2x2qan01vtuh32udd6ekp8eg7ro";
 
@@ -58,18 +8,23 @@
         }
 
         const recognition = new SpeechRecognition();
-        recognition.continuous = false;
+        
+        // CRITICAL FIXES FOR MANUALLY CONTROLLED SPEECH
+        recognition.continuous = true; // Prevents the browser from auto-stopping on pauses
         recognition.lang = 'en-US';
         recognition.interimResults = false;
 
         let isListening = false;
+        let finalTranscript = ''; // Stores text across pauses
         const btn = document.getElementById('mic-btn');
         const statusText = document.getElementById('status');
 
         function toggleListening() {
             if (isListening) {
+                // Manually stopping triggers transmission
                 recognition.stop();
             } else {
+                finalTranscript = ''; // Reset for new entry
                 recognition.start();
             }
         }
@@ -77,25 +32,36 @@
         recognition.onstart = () => {
             isListening = true;
             btn.classList.add('listening');
-            btn.innerText = "LISTENING...";
-            statusText.innerText = "Awaiting input...";
+            btn.innerText = "TAP TO SEND"; // Clear instruction change
+            statusText.innerText = "Listening... Tap button again when finished speaking.";
+        };
+
+        recognition.onresult = (event) => {
+            // Append incoming speech segments continuously
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript + ' ';
+                }
+            }
         };
 
         recognition.onend = () => {
             isListening = false;
             btn.classList.remove('listening');
             btn.innerText = "TAP TO SPEAK";
-        };
 
-        recognition.onresult = (event) => {
-            const textResult = event.results[0][0].transcript;
-            statusText.innerText = `Transmitting: "${textResult}"`;
+            if (!finalTranscript.trim()) {
+                statusText.innerText = "No speech detected. Ready, sir.";
+                return;
+            }
+
+            statusText.innerText = `Transmitting: "${finalTranscript.trim()}"`;
             
-            // Send directly to your Make.com platform
+            // Transmit data to Make.com only when explicitly stopped
             fetch(MAKE_WEBHOOK_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ speech: textResult })
+                body: JSON.stringify({ speech: finalTranscript.trim() })
             })
             .then(res => {
                 if(res.ok) statusText.innerText = "Entry logged successfully.";
@@ -104,5 +70,3 @@
             .catch(err => statusText.innerText = "Error contacting Jarvis core.");
         };
     </script>
-</body>
-</html>
