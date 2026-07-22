@@ -175,8 +175,7 @@
 
   <script>
     // === CONFIGURATION ===
-    // Paste your Pipedream HTTP Trigger Webhook URL here
-    const WEBHOOK_URL = "https://eooooszfzs19sn2.m.pipedream.net";
+    const PIPEDREAM_WEBHOOK_URL = "https://YOUR_PIPEDREAM_WEBHOOK_URL_HERE";
 
     // === DOM ELEMENTS ===
     const micBtn = document.getElementById("micBtn");
@@ -187,7 +186,8 @@
 
     let recognition = null;
     let isRecording = false;
-    let finalTranscript = "";
+    let baseText = "";
+    let currentInterim = "";
 
     // === SPEECH RECOGNITION SETUP ===
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -197,98 +197,93 @@
       micBtn.disabled = true;
     } else {
       recognition = new SpeechRecognition();
-      recognition.continuous = false;
+      recognition.continuous = false; // Prevents Android duplicated results
       recognition.interimResults = true;
-      recognition.lang = "en-IN"; // Set to your primary dialect (e.g., en-US, en-IN)
-
-      et baseText = ""; // Holds finalized sentences
+      recognition.lang = "en-IN"; // Adjust dialect if needed (e.g. en-US)
 
       recognition.onresult = (event) => {
-        let currentSessionText = "";
-
-        // Simply grab the latest result transcript for this speech segment
+        currentInterim = "";
         for (let i = 0; i < event.results.length; ++i) {
-          currentSessionText += event.results[i][0].transcript;
+          currentInterim += event.results[i][0].transcript;
         }
-
-        // Display base previous text + current active utterance
-        transcriptInput.value = (baseText + " " + currentSessionText).trim().replace(/\s+/g, " ");
+        const fullText = (baseText + " " + currentInterim).trim().replace(/\s+/g, " ");
+        transcriptInput.value = fullText;
       };
 
       recognition.onend = () => {
-        // Commit current value as the new baseline
-        baseText = transcriptInput.value.trim();
+        // Commit what was heard in this chunk to baseText
+        if (currentInterim) {
+          baseText = (baseText + " " + currentInterim).trim().replace(/\s+/g, " ");
+          currentInterim = "";
+        }
 
-        // If user hasn't explicitly tapped pause, immediately restart listening for next phrase
+        // If user is still recording, safely restart after a short delay
         if (isRecording) {
-          try {
-            recognition.start();
-          } catch (e) {
-            console.log("Auto-restart suppressed:", e);
-          }
+          setTimeout(() => {
+            if (isRecording) {
+              try { recognition.start(); } catch (e) { console.log(e); }
+            }
+          }, 100);
+        } else {
+          micBtn.classList.remove("recording");
+          statusText.className = "status-badge";
+          statusText.innerText = "Recording paused. Review and tap Send.";
         }
       };
 
       recognition.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
+        console.error("Speech error:", event.error);
         if (event.error === "not-allowed") {
           statusText.innerText = "Microphone access denied.";
-          stopRecordingState();
+          stopRecording();
         }
       };
     }
 
-    // === MIC BUTTON CLICK HANDLER ===
+    // === TOGGLE MIC RECORDING ===
     micBtn.addEventListener("click", () => {
       if (!isRecording) {
-        startRecordingState();
+        startRecording();
       } else {
-        stopRecordingState();
+        stopRecording();
       }
     });
 
-    function startRecordingState() {
+    function startRecording() {
       isRecording = true;
       baseText = transcriptInput.value.trim();
-  
+      currentInterim = "";
+      
       try {
         recognition.start();
         micBtn.classList.add("recording");
         statusText.className = "status-badge active";
-        statusText.innerText = "Listening... Tap mic again to pause.";
+        statusText.innerText = "Listening... Tap mic to stop.";
       } catch (err) {
         console.error("Start error:", err);
       }
     }
 
-    function stopRecordingState() {
+    function stopRecording() {
       isRecording = false;
-      micBtn.classList.remove("recording");
-      statusText.className = "status-badge";
-      statusText.innerText = "Recording paused. Review and tap Send.";
-      if (recognition) recognition.stop();
-    }
-
-    // Update Clear button to clear baseText too
-    clearBtn.addEventListener("click", () => {
-      baseText = "";
-      finalTranscript = "";
-      transcriptInput.value = "";
-      if (!isRecording) {
-        statusText.innerText = "Tap mic to start recording";
+      try {
+        recognition.stop();
+      } catch (err) {
+        console.error("Stop error:", err);
       }
-    });
+    }
 
     // === CLEAR BUTTON ===
     clearBtn.addEventListener("click", () => {
-      finalTranscript = "";
+      baseText = "";
+      currentInterim = "";
       transcriptInput.value = "";
       if (!isRecording) {
         statusText.innerText = "Tap mic to start recording";
       }
     });
 
-    // === SEND BUTTON (EXPLICIT TRIGGER) ===
+    // === SEND BUTTON ===
     sendBtn.addEventListener("click", async () => {
       const textToSend = transcriptInput.value.trim();
 
@@ -297,9 +292,8 @@
         return;
       }
 
-      // Stop recording if active before sending
       if (isRecording) {
-        stopRecordingState();
+        stopRecording();
       }
 
       sendBtn.disabled = true;
@@ -307,7 +301,7 @@
       statusText.innerText = "Sending to Pipedream...";
 
       try {
-        const response = await fetch(WEBHOOK_URL, {
+        const response = await fetch(PIPEDREAM_WEBHOOK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ speech: textToSend }),
@@ -316,8 +310,8 @@
         if (response.ok) {
           statusText.className = "status-badge success";
           statusText.innerText = "✓ Sent successfully!";
-          // Reset UI
-          finalTranscript = "";
+          baseText = "";
+          currentInterim = "";
           transcriptInput.value = "";
         } else {
           statusText.className = "status-badge";
