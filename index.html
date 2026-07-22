@@ -50,72 +50,86 @@
 
     <script>
         // PASTE YOUR MAKE.COM WEBHOOK URL HERE
-        // const MAKE_WEBHOOK_URL = "https://hook.eu1.make.com/y4h1w2x2qan01vtuh32udd6ekp8eg7ro";
-        const MAKE_WEBHOOK_URL = "https://eooooszfzs19sn2.m.pipedream.net";
-
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) {
-            document.getElementById('status').innerText = "Speech recognition not supported on this browser.";
-        }
-
-        const recognition = new SpeechRecognition();
-        
-        recognition.continuous = true; 
-        recognition.lang = 'en-US';
-        recognition.interimResults = false;
-
+        // const WEBHOOK_URL = "https://hook.eu1.make.com/y4h1w2x2qan01vtuh32udd6ekp8eg7ro";
+        const WEBHOOK_URL = "https://eooooszfzs19sn2.m.pipedream.net";
+        let recognition;
+        let finalTranscript = "";
         let isListening = false;
-        let finalTranscript = ''; 
-        const btn = document.getElementById('mic-btn');
-        const statusText = document.getElementById('status');
 
-        function toggleListening() {
-            if (isListening) {
-                recognition.stop();
-            } else {
-                finalTranscript = ''; 
-                recognition.start();
+        const micBtn = document.getElementById("micBtn");
+        const sendBtn = document.getElementById("sendBtn");
+        const statusText = document.getElementById("status");
+
+        // 1. Initialize Web Speech API
+        if ("webkitSpeechRecognition" in window || "SpeechRecognition" in window) {
+          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+          recognition = new SpeechRecognition();
+          recognition.continuous = true;       // Keep listening through pauses
+          recognition.interimResults = true;    // Show live text while speaking
+
+          recognition.onresult = (event) => {
+            let interimTranscript = "";
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+              if (event.results[i].isFinal) {
+                finalTranscript += event.results[i][0].transcript + " ";
+              } else {
+                interimTranscript += event.results[i][0].transcript;
+              }
             }
+            // Update display box with full text so user can see it before sending
+            document.getElementById("transcriptDisplay").innerText = finalTranscript + interimTranscript;
+          };
+
+          recognition.onend = () => {
+            // DO NOT SEND HERE! Just update status or restart if user hasn't explicitly stopped it
+            if (isListening) {
+              recognition.start(); // Auto-restart if browser cuts off due to silence
+            }
+          };
         }
 
-        recognition.onstart = () => {
+        // 2. Tap to Start/Stop Recording
+        micBtn.addEventListener("click", () => {
+          if (!isListening) {
+            finalTranscript = ""; // Reset
+            recognition.start();
             isListening = true;
-            btn.classList.add('listening');
-            btn.innerText = "TAP TO SEND"; 
-            statusText.innerText = "Listening... Tap button again when finished speaking.";
-        };
-
-        recognition.onresult = (event) => {
-            for (let i = event.resultIndex; i < event.results.length; ++i) {
-                if (event.results[i].isFinal) {
-                    finalTranscript += event.results[i][0].transcript + ' ';
-                }
-            }
-        };
-
-        recognition.onend = () => {
+            statusText.innerText = "Listening... Tap mic when done.";
+          } else {
+            recognition.stop();
             isListening = false;
-            btn.classList.remove('listening');
-            btn.innerText = "TAP TO SPEAK";
+            statusText.innerText = "Recording paused. Review text and tap Send.";
+          }
+        });
 
-            if (!finalTranscript.trim()) {
-                statusText.innerText = "No speech detected. Ready, sir.";
-                return;
+        // 3. EXPLICIT TAP TO SEND (Only fires when user taps this button)
+        sendBtn.addEventListener("click", async () => {
+          if (!finalTranscript.trim()) {
+            alert("No speech captured yet!");
+            return;
+          }
+        
+          statusText.innerText = "Sending to sheet...";
+          
+          // Explicitly send payload to Pipedream webhook URL
+          try {
+            const response = await fetch("YOUR_PIPEDREAM_WEBHOOK_URL", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ speech: finalTranscript.trim() }),
+            });
+
+            if (response.ok) {
+              statusText.innerText = "Successfully logged!";
+              finalTranscript = "";
+              document.getElementById("transcriptDisplay").innerText = "";
+            } else {
+              statusText.innerText = "Failed to send.";
             }
-
-            statusText.innerText = `Transmitting: "${finalTranscript.trim()}"`;
-            
-            fetch(MAKE_WEBHOOK_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ speech: finalTranscript.trim() })
-            })
-            .then(res => {
-                if(res.ok) statusText.innerText = "Entry logged successfully.";
-                else statusText.innerText = "Transmission failed.";
-            })
-            .catch(err => statusText.innerText = "Error contacting Jarvis core.");
-        };
+          } catch (err) {
+            statusText.innerText = "Network error: " + err.message;
+          }
+        });
     </script>
 </body>
 </html>
