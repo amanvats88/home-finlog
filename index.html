@@ -197,38 +197,34 @@
       micBtn.disabled = true;
     } else {
       recognition = new SpeechRecognition();
-      recognition.continuous = true;
+      recognition.continuous = false;
       recognition.interimResults = true;
       recognition.lang = "en-IN"; // Set to your primary dialect (e.g., en-US, en-IN)
 
+      et baseText = ""; // Holds finalized sentences
+
       recognition.onresult = (event) => {
-        let interimTranscript = "";
-        let currentFinal = "";
+        let currentSessionText = "";
 
+        // Simply grab the latest result transcript for this speech segment
         for (let i = 0; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            currentFinal += event.results[i][0].transcript + " ";
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
+          currentSessionText += event.results[i][0].transcript;
         }
 
-        // Update final transcript cleanly
-        if (currentFinal) {
-          finalTranscript += currentFinal;
-        }
-
-        // Display accumulated final text + live interim text
-        transcriptInput.value = (finalTranscript + interimTranscript).replace(/\s+/g, " ");
+        // Display base previous text + current active utterance
+        transcriptInput.value = (baseText + " " + currentSessionText).trim().replace(/\s+/g, " ");
       };
 
       recognition.onend = () => {
-        // Auto-restart if browser cuts off due to silence, but user hasn't tapped stop
+        // Commit current value as the new baseline
+        baseText = transcriptInput.value.trim();
+
+        // If user hasn't explicitly tapped pause, immediately restart listening for next phrase
         if (isRecording) {
           try {
             recognition.start();
           } catch (e) {
-            console.log("Recognition restart suppressed:", e);
+            console.log("Auto-restart suppressed:", e);
           }
         }
       };
@@ -253,8 +249,7 @@
 
     function startRecordingState() {
       isRecording = true;
-      // Use existing text in box as baseline, avoid duplicate trailing spaces
-      finalTranscript = transcriptInput.value ? transcriptInput.value.trim() + " " : "";
+      baseText = transcriptInput.value.trim();
   
       try {
         recognition.start();
@@ -273,6 +268,16 @@
       statusText.innerText = "Recording paused. Review and tap Send.";
       if (recognition) recognition.stop();
     }
+
+    // Update Clear button to clear baseText too
+    clearBtn.addEventListener("click", () => {
+      baseText = "";
+      finalTranscript = "";
+      transcriptInput.value = "";
+      if (!isRecording) {
+        statusText.innerText = "Tap mic to start recording";
+      }
+    });
 
     // === CLEAR BUTTON ===
     clearBtn.addEventListener("click", () => {
