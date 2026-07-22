@@ -176,7 +176,7 @@
   <script>
     // === CONFIGURATION ===
     // Paste your Pipedream HTTP Trigger Webhook URL here
-    const PIPEDREAM_WEBHOOK_URL = "https://YOUR_PIPEDREAM_WEBHOOK_URL_HERE";
+    const WEBHOOK_URL = "https://eooooszfzs19sn2.m.pipedream.net";
 
     // === DOM ELEMENTS ===
     const micBtn = document.getElementById("micBtn");
@@ -203,14 +203,23 @@
 
       recognition.onresult = (event) => {
         let interimTranscript = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
+        let currentFinal = "";
+
+        for (let i = 0; i < event.results.length; ++i) {
           if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript + " ";
+            currentFinal += event.results[i][0].transcript + " ";
           } else {
             interimTranscript += event.results[i][0].transcript;
           }
         }
-        transcriptInput.value = finalTranscript + interimTranscript;
+
+        // Update final transcript cleanly
+        if (currentFinal) {
+          finalTranscript += currentFinal;
+        }
+
+        // Display accumulated final text + live interim text
+        transcriptInput.value = (finalTranscript + interimTranscript).replace(/\s+/g, " ");
       };
 
       recognition.onend = () => {
@@ -244,7 +253,9 @@
 
     function startRecordingState() {
       isRecording = true;
-      finalTranscript = transcriptInput.value ? transcriptInput.value + " " : "";
+      // Use existing text in box as baseline, avoid duplicate trailing spaces
+      finalTranscript = transcriptInput.value ? transcriptInput.value.trim() + " " : "";
+  
       try {
         recognition.start();
         micBtn.classList.add("recording");
@@ -291,7 +302,7 @@
       statusText.innerText = "Sending to Pipedream...";
 
       try {
-        const response = await fetch(PIPEDREAM_WEBHOOK_URL, {
+        const response = await fetch(WEBHOOK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ speech: textToSend }),
